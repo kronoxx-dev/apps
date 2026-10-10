@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {createVideoStore} from './video.mjs';
 import {createImageStore} from './images.mjs';
 import {locationApi} from './location.mjs';
 import { DatabaseSync } from 'node:sqlite';
@@ -39,7 +40,7 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
   `);
   db.exec('BEGIN IMMEDIATE');
   const columns=new Set(db.prepare('PRAGMA table_info(messages)').all().map(c=>c.name));
-  for(const [name,definition] of Object.entries({kind:"TEXT NOT NULL DEFAULT 'text'",image_path:'TEXT',image_width:'INTEGER',image_height:'INTEGER',voice_path:'TEXT',voice_mime:'TEXT',duration_ms:'INTEGER',transcript:'TEXT',transcript_status:'TEXT',edited_at:'INTEGER',deleted_at:'INTEGER',revision:'INTEGER NOT NULL DEFAULT 0'})) {
+  for(const [name,definition] of Object.entries({kind:"TEXT NOT NULL DEFAULT 'text'",video_path:'TEXT',image_path:'TEXT',image_width:'INTEGER',image_height:'INTEGER',voice_path:'TEXT',voice_mime:'TEXT',duration_ms:'INTEGER',transcript:'TEXT',transcript_status:'TEXT',edited_at:'INTEGER',deleted_at:'INTEGER',revision:'INTEGER NOT NULL DEFAULT 0'})) {
     if(!columns.has(name))db.exec('ALTER TABLE messages ADD COLUMN '+name+' '+definition);
   }
   db.exec('CREATE TABLE IF NOT EXISTS message_clock(id INTEGER PRIMARY KEY CHECK(id=1), value INTEGER NOT NULL DEFAULT 0); INSERT OR IGNORE INTO message_clock(id) VALUES(1);');
@@ -57,6 +58,7 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
     const revision=one('UPDATE message_clock SET value=value+1 WHERE id=1 RETURNING value').value;
     run('UPDATE messages SET revision=? WHERE id=?',revision,id);return revision;
   };
+  const videoStore=createVideoStore(dataDir,{ffmpegPath});
   const imageStore=createImageStore(dataDir,{ffmpegPath});
   const voiceStore=createVoiceStore(dataDir,{ffmpegPath});
   const transcription=transcriptionQueue(db,voiceStore,transcribe,id=>transaction(()=>touchMessage(id)));
@@ -103,13 +105,13 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
       }
       if(!path.startsWith('/api/')) {
         if(req.method!=='GET' && req.method!=='HEAD') throw fail(405,'Метод не поддерживается');
-        const files={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/voice.js':'voice.js','/attachments.js':'attachments.js','/location.js':'location.js','/vendor/leaflet.js':'vendor/leaflet.js','/vendor/leaflet.css':'vendor/leaflet.css','/style.css':'style.css','/icon.svg':'icon.svg','/avatars/artur.png':'avatars/artur.png','/avatars/adel.png':'avatars/adel.png','/avatars/rezeda.png':'avatars/rezeda.png','/avatars/family.png':'avatars/family.png','/avatars/chelsey.png':'avatars/chelsey.png'};
+        const files={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/voice.js':'voice.js','/attachments.js':'attachments.js','/video.js':'video.js','/location.js':'location.js','/vendor/leaflet.js':'vendor/leaflet.js','/vendor/leaflet.css':'vendor/leaflet.css','/style.css':'style.css','/icon.svg':'icon.svg','/avatars/artur.png':'avatars/artur.png','/avatars/adel.png':'avatars/adel.png','/avatars/rezeda.png':'avatars/rezeda.png','/avatars/family.png':'avatars/family.png','/avatars/chelsey.png':'avatars/chelsey.png'};
         const file=files[path]; if(!file) throw fail(404,'Не найдено');
         const body=readFileSync(resolve(assets,file));
         res.writeHead(200,{'Content-Type':({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png'})[extname(file)],'Content-Security-Policy':"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org; connect-src 'self'; media-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Cache-Control':'no-cache'});
         res.end(req.method==='HEAD'?undefined:body); return;
       }
-      if(path==='/api/health' && req.method==='GET') return send(200,{ok:true,name:'Graff',version:'0.5.0',push:push.enabled,voice:true,transcription:transcription.enabled});
+      if(path==='/api/health' && req.method==='GET') return send(200,{ok:true,name:'Graff',version:'0.6.0',video:true,push:push.enabled,voice:true,transcription:transcription.enabled});
       const ip=req.socket.remoteAddress || 'local';
       throttle('all:'+ip,600,60000);
       if(req.headers.origin) {
@@ -120,7 +122,7 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
       if(['POST','PUT','PATCH'].includes(req.method)) {
         if(!(req.headers['content-type']||'').startsWith('application/json')) throw fail(415,'Ожидается JSON');
         let size=0,chunks=[];
-        for await(const chunk of req) { size+=chunk.length; if(size>(/^\/api\/chats\/[a-zA-Z0-9-]+\/(voice|image)$/.test(path)?2900000:32768)) throw fail(413,'Слишком большой запрос'); chunks.push(chunk); }
+        for await(const chunk of req) { size+=chunk.length; if(size>(/^\/api\/chats\/[a-zA-Z0-9-]+\/video$/.test(path)?11300000:/^\/api\/chats\/[a-zA-Z0-9-]+\/(voice|image)$/.test(path)?2900000:32768)) throw fail(413,'Слишком большой запрос'); chunks.push(chunk); }
         try { body=JSON.parse(Buffer.concat(chunks).toString()||'{}'); } catch { throw fail(400,'Некорректный JSON'); }
         if(!body || Array.isArray(body) || typeof body!=='object') throw fail(400,'Некорректный запрос');
       }
@@ -209,11 +211,16 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
         transaction(()=>{run('INSERT INTO chats VALUES(?,?,?,?,?)',id,kind,title,directKey,now());for(const uid of ids) run('INSERT INTO members(chat_id,user_id) VALUES(?,?)',id,uid);});
         return send(201,{id});
       }
-      const mutation=path.match(/^\/api\/chats\/([a-zA-Z0-9-]+)\/messages\/(\d+)\/(edit|delete|audio|transcribe|image)$/);
+      const mutation=path.match(/^\/api\/chats\/([a-zA-Z0-9-]+)\/messages\/(\d+)\/(edit|delete|audio|transcribe|image|video)$/);
       if(mutation){
         const [,chat,rawId,action]=mutation,id=Number(rawId);membership(chat,user);
         const current=one('SELECT * FROM messages WHERE id=? AND chat_id=?',id,chat);
         if(!current||current.deleted_at)throw fail(404,'Сообщение удалено или не найдено');
+        if(action==='video' && req.method==='GET'){
+          if(current.kind!=='video')throw fail(404,'Видео не найдено');
+          const poster=url.searchParams.get('poster')==='1';
+          return send(200,{video:videoStore.read(current.video_path,poster).toString('base64'),mime:poster?'image/jpeg':'video/mp4'});
+        }
         if(action==='image' && req.method==='GET'){
           if(current.kind!=='image')throw fail(404,'Изображение не найдено');
           return send(200,{image:imageStore.read(current.image_path,url.searchParams.get('thumbnail')==='1').toString('base64'),mime:'image/jpeg'});
@@ -237,11 +244,29 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
           const text=str(body.body,current.kind==='image'?0:1,4000,'Сообщение: до 4000 символов');
           transaction(()=>{if(!run('UPDATE messages SET body=?,edited_at=? WHERE id=? AND revision=? AND deleted_at IS NULL',text,now(),id,body.revision).changes)throw fail(409,'Сообщение уже изменилось');touchMessage(id);});
         }else if(action==='delete'){
-          transaction(()=>{if(!run("UPDATE messages SET body='',transcript=NULL,transcript_status=NULL,voice_path=NULL,image_path=NULL,deleted_at=? WHERE id=? AND revision=? AND deleted_at IS NULL",now(),id,body.revision).changes)throw fail(409,'Сообщение уже изменилось');touchMessage(id);run('DELETE FROM push_outbox WHERE message_id=?',id);});
+          transaction(()=>{if(!run("UPDATE messages SET body='',transcript=NULL,transcript_status=NULL,voice_path=NULL,image_path=NULL,video_path=NULL,deleted_at=? WHERE id=? AND revision=? AND deleted_at IS NULL",now(),id,body.revision).changes)throw fail(409,'Сообщение уже изменилось');touchMessage(id);run('DELETE FROM push_outbox WHERE message_id=?',id);});
           if(current.voice_path)voiceStore.remove(current.voice_path);
           if(current.image_path)imageStore.remove(current.image_path);
+          if(current.video_path)videoStore.remove(current.video_path);
         }else throw fail(404,'Не найдено');
         return send(200,{message:message(id)});
+      }
+      const video=path.match(/^\/api\/chats\/([a-zA-Z0-9-]+)\/video$/);
+      if(video&&req.method==='POST'){
+        const chat=video[1];membership(chat,user);throttle('video:'+user.id,6,60000);
+        const nonce=str(body.nonce,8,80,'Не задан идентификатор сообщения');
+        const existing=one('SELECT id,chat_id,kind FROM messages WHERE user_id=? AND nonce=?',user.id,nonce);
+        if(existing){if(existing.chat_id!==chat||existing.kind!=='video')throw fail(409,'Конфликт идентификатора сообщения');return send(200,{message:message(existing.id)});}
+        const clip=await videoStore.prepare(body.video,body.mime);let id;
+        try{
+          if(!one('SELECT 1 FROM sessions WHERE token=? AND expires>?',hash(token),now()))throw fail(401,'Войдите в аккаунт');membership(chat,user);
+          id=transaction(()=>{
+            const duplicate=one('SELECT id,chat_id,kind FROM messages WHERE user_id=? AND nonce=?',user.id,nonce);
+            if(duplicate){if(duplicate.chat_id!==chat||duplicate.kind!=='video')throw fail(409,'Конфликт идентификатора сообщения');videoStore.remove(clip.key);return duplicate.id;}
+            const id=Number(run("INSERT INTO messages(chat_id,user_id,body,nonce,created,kind,video_path,duration_ms) VALUES(?,?,?,?,?,'video',?,?)",chat,user.id,'',nonce,now(),clip.key,clip.duration).lastInsertRowid);touchMessage(id);push.enqueue(id);return id;
+          });
+        }catch(e){videoStore.remove(clip.key);throw e;}
+        send(201,{message:message(id)});drainPush();return;
       }
       const photo=path.match(/^\/api\/chats\/([a-zA-Z0-9-]+)\/image$/);
       if(photo&&req.method==='POST'){

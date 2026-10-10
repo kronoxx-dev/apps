@@ -33,6 +33,7 @@ import javax.crypto.spec.GCMParameterSpec;
 public class MainActivity extends Activity {
     private WebView web;
     private VoiceRecorder voice;
+    private PermissionRequest cameraPermission;
     private boolean voiceRequested=false;
     private SharedPreferences prefs;
     private final ExecutorService network = new ThreadPoolExecutor(3,3,30,TimeUnit.SECONDS,new ArrayBlockingQueue<Runnable>(30));
@@ -66,11 +67,22 @@ public class MainActivity extends Activity {
         s.setJavaScriptCanOpenWindowsAutomatically(false);
         s.setSupportMultipleWindows(false);
         s.setSafeBrowsingEnabled(true);
-        s.setUserAgentString(s.getUserAgentString()+" Graff/0.4.0 (+https://kronoxx.ru/graff/)");
+        s.setUserAgentString(s.getUserAgentString()+" Graff/0.6.0 (+https://kronoxx.ru/graff/)");
         s.setTextZoom(100);s.setMediaPlaybackRequiresUserGesture(false);
         CookieManager.getInstance().setAcceptCookie(false);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
         web.addJavascriptInterface(new Bridge(),"Android");
+        web.setWebChromeClient(new WebChromeClient(){
+            @Override public void onPermissionRequest(PermissionRequest request){runOnUiThread(()->{
+                if(!ORIGIN.equals(request.getOrigin().toString().replaceAll("/$",""))){request.deny();return;}
+                for(String resource:request.getResources())if(!PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)&&!PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)){request.deny();return;}
+                if(cameraPermission!=null)cameraPermission.deny();cameraPermission=request;
+                ArrayList<String> missing=new ArrayList<>();
+                for(String p:new String[]{android.Manifest.permission.CAMERA,android.Manifest.permission.RECORD_AUDIO})if(checkSelfPermission(p)!=android.content.pm.PackageManager.PERMISSION_GRANTED)missing.add(p);
+                if(missing.isEmpty())grantCamera();else requestPermissions(missing.toArray(new String[0]),105);
+            });}
+            @Override public void onPermissionRequestCanceled(PermissionRequest request){if(cameraPermission==request)cameraPermission=null;}
+        });
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){return true;}
             @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request){
@@ -79,7 +91,7 @@ public class MainActivity extends Activity {
                 if("https".equals(uri.getScheme())&&"tile.openstreetmap.org".equals(uri.getHost())&&file!=null&&file.matches("/[0-9]{1,2}/[0-9]+/[0-9]+\\.png"))return null;
                 if(!"https".equals(uri.getScheme())||!"app.ryadom.local".equals(uri.getHost()))return blocked();
                 if(file==null||file.equals("/"))file="/index.html";
-                if(!Arrays.asList("/index.html","/app.js","/voice.js","/attachments.js","/location.js","/vendor/leaflet.js","/vendor/leaflet.css","/style.css","/icon.svg","/avatars/artur.png","/avatars/adel.png","/avatars/rezeda.png","/avatars/family.png","/avatars/chelsey.png").contains(file))return blocked();
+                if(!Arrays.asList("/index.html","/app.js","/voice.js","/attachments.js","/video.js","/location.js","/vendor/leaflet.js","/vendor/leaflet.css","/style.css","/icon.svg","/avatars/artur.png","/avatars/adel.png","/avatars/rezeda.png","/avatars/family.png","/avatars/chelsey.png").contains(file))return blocked();
                 String mime=file.endsWith(".png")?"image/png":file.endsWith(".js")?"text/javascript":file.endsWith(".css")?"text/css":file.endsWith(".svg")?"image/svg+xml":"text/html";
                 try {
                     Map<String,String> headers=new HashMap<>();
@@ -114,9 +126,14 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void grantCamera(){
+        PermissionRequest request=cameraPermission;cameraPermission=null;if(request==null)return;
+        if(checkSelfPermission(android.Manifest.permission.CAMERA)==android.content.pm.PackageManager.PERMISSION_GRANTED&&checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)==android.content.pm.PackageManager.PERMISSION_GRANTED)request.grant(request.getResources());else request.deny();
+    }
     void voiceEvent(JSONObject event){runOnUiThread(()->{if(web!=null&&!isFinishing())web.evaluateJavascript("window.onVoiceEvent && window.onVoiceEvent("+event.toString()+")",null);});}
     @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){
         super.onRequestPermissionsResult(code,permissions,results);
+        if(code==105)grantCamera();
         if(code==103){if(checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION)==android.content.pm.PackageManager.PERMISSION_GRANTED)beginLocation();else locationEvent("Разрешите доступ к геолокации, чтобы появиться на карте");}
         if(code==102){if(results.length>0&&results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED){if(voiceRequested)voice.start();}else{JSONObject error=error("Для записи разрешите доступ к микрофону в настройках телефона");try{error.put("state","error");}catch(Exception ignored){}voiceEvent(error);}}
     }
@@ -169,12 +186,12 @@ public class MainActivity extends Activity {
             }
             URL endpoint=new URL(base.replaceAll("/$","")+"/api"+path);
             conn=(HttpURLConnection)endpoint.openConnection();
-            conn.setConnectTimeout(8000);conn.setReadTimeout(path.endsWith("/voice")||path.endsWith("/audio")||path.contains("/image")?60000:12000);conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(8000);conn.setReadTimeout(path.contains("/video")?115000:path.endsWith("/voice")||path.endsWith("/audio")||path.contains("/image")?60000:12000);conn.setInstanceFollowRedirects(false);
             conn.setRequestMethod(method);conn.setRequestProperty("Accept","application/json");
             String token=session.optString("token","");if(!token.isEmpty())conn.setRequestProperty("Authorization","Bearer "+token);
             if(method.equals("POST")){
                 byte[] bytes=body.getBytes(StandardCharsets.UTF_8);
-                if(bytes.length>((path.endsWith("/voice")||path.endsWith("/image"))?2900000:32768))throw new IOException("Слишком большой запрос");
+                if(bytes.length>(path.endsWith("/video")?11300000:(path.endsWith("/voice")||path.endsWith("/image"))?2900000:32768))throw new IOException("Слишком большой запрос");
                 conn.setDoOutput(true);conn.setRequestProperty("Content-Type","application/json");conn.setFixedLengthStreamingMode(bytes.length);
                 try(OutputStream out=conn.getOutputStream()){out.write(bytes);}
             }
@@ -182,7 +199,7 @@ public class MainActivity extends Activity {
             InputStream stream=status>=400?conn.getErrorStream():conn.getInputStream();
             if(stream==null)throw new IOException("Пустой ответ сервера");
             ByteArrayOutputStream output=new ByteArrayOutputStream();
-            try(InputStream input=stream){byte[] buffer=new byte[8192];int n;while((n=input.read(buffer))!=-1){if(output.size()+n>6000000)throw new IOException("Слишком большой ответ");output.write(buffer,0,n);}}
+            try(InputStream input=stream){byte[] buffer=new byte[8192];int n;while((n=input.read(buffer))!=-1){if(output.size()+n>(path.contains("/video")?12000000:6000000))throw new IOException("Слишком большой ответ");output.write(buffer,0,n);}}
             JSONObject result;try{result=new JSONObject(output.toString("UTF-8"));}catch(Exception e){throw new IOException("Сервер вернул неверный ответ");}
             respond(id,status,result);
         }catch(Exception e){respond(id,0,error(e instanceof javax.net.ssl.SSLException?"Не удалось проверить HTTPS-сертификат сервера":"Нет связи с сервером. Проверьте адрес и подключение."));}
@@ -192,7 +209,7 @@ public class MainActivity extends Activity {
         try{JSONObject payload=new JSONObject();payload.put("status",status);payload.put("data",data);String script="window.onNativeResponse("+JSONObject.quote(id)+","+payload.toString()+")";runOnUiThread(()->{if(web!=null&&!isFinishing())web.evaluateJavascript(script,null);});}catch(Exception ignored){}
     }
     @Override public void onBackPressed(){web.evaluateJavascript("window.appBack ? window.appBack() : false",result->{if(!"true".equals(result))finish();});}
-    @Override protected void onPause(){PushController.foreground=false;if(voice!=null)voice.cancel(true);if(web!=null)web.evaluateJavascript("window.graffPauseVoice && window.graffPauseVoice()",null);super.onPause();web.onPause();}
+    @Override protected void onPause(){PushController.foreground=false;if(voice!=null)voice.cancel(true);if(web!=null&&cameraPermission==null)web.evaluateJavascript("window.videoBackground && window.videoBackground()",null);if(web!=null)web.evaluateJavascript("window.graffPauseVoice && window.graffPauseVoice()",null);super.onPause();web.onPause();}
     @Override protected void onResume(){super.onResume();PushController.foreground=true;PushController.sync(this);if(web!=null){web.onResume();web.evaluateJavascript("window.onNotificationOpen && window.onNotificationOpen()",null);}}
-    @Override protected void onDestroy(){if(voice!=null)voice.cancel(false);network.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){if(cameraPermission!=null){cameraPermission.deny();cameraPermission=null;}if(voice!=null)voice.cancel(false);network.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
 }

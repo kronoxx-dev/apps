@@ -75,7 +75,7 @@ export function createPushQueue(db, sender) {
       if(!row||row.created<time-86400000){remove();continue;}
       try {
         await sender({token:job.token,data:{chatId:row.chat_id,messageId:String(row.id),recipientUserId:job.recipient,
-          title:row.chat_kind==='direct'?row.name:row.title,body:(row.chat_kind==='direct'?'':row.name+': ')+(row.kind==='voice'?'🎙 Голосовое сообщение':(row.kind==='image'?'📷 Фото'+(row.body?': ':''):'')+Array.from(row.body).slice(0,180).join(''))}});
+          title:row.chat_kind==='direct'?row.name:row.title,body:(row.chat_kind==='direct'?'':row.name+': ')+(row.kind==='video'?'🎥 Видеосообщение':row.kind==='voice'?'🎙 Голосовое сообщение':(row.kind==='image'?'📷 Фото'+(row.body?': ':''):'')+Array.from(row.body).slice(0,180).join(''))}});
         remove();
       } catch(e) {
         if(e.invalidToken){run('DELETE FROM push_devices WHERE token=?',job.token);continue;}

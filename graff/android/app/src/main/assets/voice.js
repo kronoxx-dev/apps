@@ -14,6 +14,7 @@ audioPlayer.onended=()=>{S.voicePlaying=null;refreshPlayButtons();};
 window.graffPauseVoice=()=>{audioPlayer.pause();S.voicePlaying=null;refreshPlayButtons();};
 window.graffClearAudio=()=>{window.graffPauseVoice();audioPlayer.removeAttribute('src');for(const url of audioCache.values())URL.revokeObjectURL(url);audioCache.clear();S.transcriptOpen={};};
 async function playMessage(id){
+ window.pauseVideo?.();
  if(S.voicePlaying===id){window.graffPauseVoice();return;}
  window.graffPauseVoice();const current=S.messages.find(m=>m.id===id&&!m.deleted_at);if(!current)return;
  const user=config.user?.id;
@@ -25,9 +26,9 @@ async function playMessage(id){
  }
  audioPlayer.src=audioCache.get(id);await audioPlayer.play();S.voicePlaying=id;refreshPlayButtons();
 }
-window.onMessageChanged=message=>{window.photoMessageChanged?.(message);if(message.deleted_at){if(S.voicePlaying===message.id)window.graffPauseVoice();if(audioCache.has(message.id)){URL.revokeObjectURL(audioCache.get(message.id));audioCache.delete(message.id);}}};
-function applyMessageChange(message){window.photoMessageChanged?.(message);const i=S.messages.findIndex(m=>m.id===message.id);if(i>=0)S.messages[i]=message;if(message.deleted_at){if(S.voicePlaying===message.id)window.graffPauseVoice();if(audioCache.has(message.id)){URL.revokeObjectURL(audioCache.get(message.id));audioCache.delete(message.id);}}renderMessages();refresh();}
-function messageOptions(id){const m=S.messages.find(m=>m.id===id&&!m.deleted_at);if(!m||m.user_id!==config.user?.id)return;modal('Сообщение',`${m.kind!=='voice'?`<button class="setting" data-edit-message="${id}">${icon('edit')}<div><strong>${m.kind==='image'?'Изменить подпись':'Редактировать'}</strong><small>Изменится у всех участников</small></div></button>`:''}<button class="setting destructive" data-delete-message="${id}">${icon('trash')}<div><strong>Удалить у всех</strong><small>Сообщение исчезнет из этого чата</small></div></button>`);}
+window.onMessageChanged=message=>{window.videoMessageChanged?.(message);window.photoMessageChanged?.(message);if(message.deleted_at){if(S.voicePlaying===message.id)window.graffPauseVoice();if(audioCache.has(message.id)){URL.revokeObjectURL(audioCache.get(message.id));audioCache.delete(message.id);}}};
+function applyMessageChange(message){window.videoMessageChanged?.(message);window.photoMessageChanged?.(message);const i=S.messages.findIndex(m=>m.id===message.id);if(i>=0)S.messages[i]=message;if(message.deleted_at){if(S.voicePlaying===message.id)window.graffPauseVoice();if(audioCache.has(message.id)){URL.revokeObjectURL(audioCache.get(message.id));audioCache.delete(message.id);}}renderMessages();refresh();}
+function messageOptions(id){const m=S.messages.find(m=>m.id===id&&!m.deleted_at);if(!m||m.user_id!==config.user?.id)return;modal('Сообщение',`${['text','image'].includes(m.kind)?`<button class="setting" data-edit-message="${id}">${icon('edit')}<div><strong>${m.kind==='image'?'Изменить подпись':'Редактировать'}</strong><small>Изменится у всех участников</small></div></button>`:''}<button class="setting destructive" data-delete-message="${id}">${icon('trash')}<div><strong>Удалить у всех</strong><small>Сообщение исчезнет из этого чата</small></div></button>`);}
 function editMessage(id){const m=S.messages.find(m=>m.id===id&&!m.deleted_at);if(!m)return;modal('Редактировать сообщение',`<form class="form" id="edit-message-form" data-id="${id}" data-revision="${m.revision||0}"><label class="field">Текст<textarea name="body" rows="5" maxlength="4000" ${m.kind==='image'?'':'required'}>${esc(m.body)}</textarea></label><div class="form-error" role="alert"></div><button class="primary" type="submit">Сохранить для всех</button></form>`);}
 function confirmDelete(id){const m=S.messages.find(m=>m.id===id&&!m.deleted_at);if(!m)return;modal('Удалить у всех?',`<p>Сообщение исчезнет у всех участников этого чата.</p><button class="primary danger-button" data-confirm-delete="${id}" data-revision="${m.revision||0}">Удалить сообщение</button><button class="text-btn" data-action="close-modal">Отмена</button>`);}
 window.clearVoiceDraft=()=>{
@@ -49,6 +50,7 @@ window.onVoiceEvent=event=>{
  if(event.state==='cancelled'){closeModal();toast('Запись отменена');}
 };
 async function startVoice(){
+ window.pauseVideo?.();
  if(S.demo){toast('Голосовые доступны после входа в аккаунт');return;}
  window.graffPauseVoice();window.clearVoiceDraft();voiceDiscard=false;voiceChat=S.chatId;
  if(native&&Android.startVoice){modal('Микрофон','<p>Разрешите доступ к микрофону, чтобы записать голосовое сообщение.</p><button class="text-btn" data-action="cancel-voice">Отмена</button>');Android.startVoice();return;}
