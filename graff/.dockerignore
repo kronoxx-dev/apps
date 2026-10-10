@@ -1,0 +1,9 @@
+data
+build
+node_modules
+.git
+.env
+*.keystore
+*.jks
+android/.gradle
+android/app/build

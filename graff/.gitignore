@@ -1,0 +1,24 @@
+data/
+node_modules/
+.gradle/
+android/.gradle/
+android/local.properties
+android/app/build/
+build/
+*.keystore
+*.jks
+.env
+.DS_Store
+
+# Firebase service credentials and local configuration never belong in Git.
+**/google-services.json
+**/*service-account*.json
+**/*adminsdk*.json
+**/firebase-credentials*.json
+config.json
+*.sqlite*
+*.db
+*.apk
+*.aab
+*.idsig
+*.log

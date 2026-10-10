@@ -1,0 +1,42 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createMessenger} from './server.mjs';
+test('Family location requires consent, isolates owners, rejects old updates and disappears on stop/logout',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'graff-location-')),app=createMessenger({dataDir:dir,bootstrapCode:'LOCATION-TEST-INVITE'});
+ await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port+'/api';
+ const req=async(path,user,body)=>{const r=await fetch(base+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(user?{Authorization:'Bearer '+user.token}:{})},body:body?JSON.stringify(body):undefined});return {status:r.status,data:await r.json()};};
+ try{
+ const a=(await req('/auth/register',null,{login:'owner',name:'Owner',password:'test-location-password',invite:'LOCATION-TEST-INVITE'})).data;
+ const invite=(await req('/invites',a,{})).data.code;
+ const b=(await req('/auth/register',null,{login:'other',name:'Other',password:'test-location-password',invite})).data;
+ assert.equal((await req('/locations')).status,401);
+ assert.equal((await req('/locations',a)).data.members.length,2);
+ assert.ok((await req('/locations',a)).data.members.every(m=>m.location===null&&!m.sharing));
+ const data={lat:55.7,lon:37.6,accuracy:15,recorded:Date.now(),shareId:'not-enabled'};
+ assert.equal((await req('/location/update',a,data)).status,409);
+ const share=(await req('/location/share',a,{enabled:true})).data.shareId;
+ assert.equal((await req('/location/update',a,{...data,shareId:share,lat:91})).status,400);
+ assert.equal((await req('/location/update',a,{...data,shareId:share,recorded:Date.now()-400000})).status,400);
+ assert.equal((await req('/location/update',b,{...data,shareId:share})).status,409);
+ assert.equal((await req('/location/update',a,{...data,shareId:share})).status,200);
+ const found=(await req('/locations',b)).data.members.find(m=>m.id===a.user.id);assert.equal(found.location.lat,55.7);assert.ok(!JSON.stringify(found).includes(share));
+ assert.equal((await req('/location/update',a,{...data,shareId:share,recorded:data.recorded-1})).status,409);
+ const newer=(await req('/location/share',a,{enabled:true})).data.shareId;
+ await req('/location/share',a,{enabled:false,shareId:share});
+ assert.equal((await req('/location/update',a,{...data,shareId:newer})).status,200);
+ await req('/location/share',a,{enabled:false});
+ assert.equal((await req('/location/update',a,{...data,shareId:newer})).status,409);
+ assert.equal((await req('/locations',b)).data.members.find(m=>m.id===a.user.id).location,null);
+ const next=(await req('/location/share',a,{enabled:true})).data.shareId;
+ await req('/location/update',a,{...data,shareId:next});
+ app.db.prepare('UPDATE locations SET updated=?').run(Date.now()-86400001);
+ assert.equal((await req('/locations',b)).data.members.find(m=>m.id===a.user.id).location,null);
+ await req('/location/share',a,{enabled:true});await req('/auth/logout',a,{});
+ assert.equal(app.db.prepare('SELECT count(*) AS n FROM locations').get().n,0);
+ app.db.prepare("DELETE FROM members WHERE chat_id='family' AND user_id=?").run(b.user.id);
+ assert.equal((await req('/locations',b)).status,403);
+ }finally{await app.close();rmSync(dir,{recursive:true,force:true});}
+});
