@@ -105,13 +105,13 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
       }
       if(!path.startsWith('/api/')) {
         if(req.method!=='GET' && req.method!=='HEAD') throw fail(405,'Метод не поддерживается');
-        const files={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/voice.js':'voice.js','/attachments.js':'attachments.js','/video.js':'video.js','/location.js':'location.js','/vendor/leaflet.js':'vendor/leaflet.js','/vendor/leaflet.css':'vendor/leaflet.css','/style.css':'style.css','/icon.svg':'icon.svg','/avatars/artur.png':'avatars/artur.png','/avatars/adel.png':'avatars/adel.png','/avatars/rezeda.png':'avatars/rezeda.png','/avatars/family.png':'avatars/family.png','/avatars/chelsey.png':'avatars/chelsey.png'};
+        const files={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/voice.js':'voice.js','/attachments.js':'attachments.js','/video.js':'video.js','/video-poster.svg':'video-poster.svg','/location.js':'location.js','/vendor/leaflet.js':'vendor/leaflet.js','/vendor/leaflet.css':'vendor/leaflet.css','/style.css':'style.css','/icon.svg':'icon.svg','/avatars/artur.png':'avatars/artur.png','/avatars/adel.png':'avatars/adel.png','/avatars/rezeda.png':'avatars/rezeda.png','/avatars/family.png':'avatars/family.png','/avatars/chelsey.png':'avatars/chelsey.png'};
         const file=files[path]; if(!file) throw fail(404,'Не найдено');
         const body=readFileSync(resolve(assets,file));
         res.writeHead(200,{'Content-Type':({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png'})[extname(file)],'Content-Security-Policy':"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org; connect-src 'self'; media-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Cache-Control':'no-cache'});
         res.end(req.method==='HEAD'?undefined:body); return;
       }
-      if(path==='/api/health' && req.method==='GET') return send(200,{ok:true,name:'Graff',version:'0.6.0',video:true,push:push.enabled,voice:true,transcription:transcription.enabled});
+      if(path==='/api/health' && req.method==='GET') return send(200,{ok:true,name:'Graff',version:'0.6.1',video:true,push:push.enabled,voice:true,transcription:transcription.enabled});
       const ip=req.socket.remoteAddress || 'local';
       throttle('all:'+ip,600,60000);
       if(req.headers.origin) {

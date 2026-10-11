@@ -67,7 +67,7 @@ public class MainActivity extends Activity {
         s.setJavaScriptCanOpenWindowsAutomatically(false);
         s.setSupportMultipleWindows(false);
         s.setSafeBrowsingEnabled(true);
-        s.setUserAgentString(s.getUserAgentString()+" Graff/0.6.0 (+https://kronoxx.ru/graff/)");
+        s.setUserAgentString(s.getUserAgentString()+" Graff/0.6.1 (+https://kronoxx.ru/graff/)");
         s.setTextZoom(100);s.setMediaPlaybackRequiresUserGesture(false);
         CookieManager.getInstance().setAcceptCookie(false);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
@@ -91,7 +91,7 @@ public class MainActivity extends Activity {
                 if("https".equals(uri.getScheme())&&"tile.openstreetmap.org".equals(uri.getHost())&&file!=null&&file.matches("/[0-9]{1,2}/[0-9]+/[0-9]+\\.png"))return null;
                 if(!"https".equals(uri.getScheme())||!"app.ryadom.local".equals(uri.getHost()))return blocked();
                 if(file==null||file.equals("/"))file="/index.html";
-                if(!Arrays.asList("/index.html","/app.js","/voice.js","/attachments.js","/video.js","/location.js","/vendor/leaflet.js","/vendor/leaflet.css","/style.css","/icon.svg","/avatars/artur.png","/avatars/adel.png","/avatars/rezeda.png","/avatars/family.png","/avatars/chelsey.png").contains(file))return blocked();
+                if(!Arrays.asList("/index.html","/app.js","/voice.js","/attachments.js","/video.js","/video-poster.svg","/location.js","/vendor/leaflet.js","/vendor/leaflet.css","/style.css","/icon.svg","/avatars/artur.png","/avatars/adel.png","/avatars/rezeda.png","/avatars/family.png","/avatars/chelsey.png").contains(file))return blocked();
                 String mime=file.endsWith(".png")?"image/png":file.endsWith(".js")?"text/javascript":file.endsWith(".css")?"text/css":file.endsWith(".svg")?"image/svg+xml":"text/html";
                 try {
                     Map<String,String> headers=new HashMap<>();

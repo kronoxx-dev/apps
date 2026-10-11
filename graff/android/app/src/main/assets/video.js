@@ -15,7 +15,7 @@ async function playVideo(id){
  window.graffPauseVoice?.();window.pauseVideo();const m=S.messages.find(x=>x.id===id&&!x.deleted_at),user=config.user?.id;if(!m)return;videoPlayingId=id;
  const button=$(`[data-play-video="${id}"]`);if(button)button.classList.add('loading');
  try{let url=videoClips.get(id);if(!url){const r=await api(`/chats/${m.chat_id}/messages/${id}/video`);if(user!==config.user?.id||S.chatId!==m.chat_id||videoPlayingId!==id||!S.messages.some(x=>x.id===id&&!x.deleted_at))return;url=cacheVideo(videoClips,id,r.video,r.mime,4);}
-  videoPlayer=document.createElement('video');videoPlayer.src=url;videoPlayer.poster=videoPosters.get(id)||'';videoPlayer.playsInline=true;videoPlayer.preload='auto';videoPlayer.onended=()=>{$(`[data-play-video="${id}"]`)?.classList.remove('playing');};window.restoreVideoPlayback();await videoPlayer.play();const b=$(`[data-play-video="${id}"]`);b?.classList.add('playing');b?.setAttribute('aria-label','Пауза видеосообщения');
+  videoPlayer=document.createElement('video');videoPlayer.src=url;videoPlayer.poster=videoPosters.get(id)||'video-poster.svg';videoPlayer.playsInline=true;videoPlayer.preload='auto';videoPlayer.onended=()=>{$(`[data-play-video="${id}"]`)?.classList.remove('playing');};window.restoreVideoPlayback();await videoPlayer.play();const b=$(`[data-play-video="${id}"]`);b?.classList.add('playing');b?.setAttribute('aria-label','Пауза видеосообщения');
  }catch(e){if(videoPlayingId===id)window.pauseVideo();toast(e.message||'Не удалось открыть видео');}finally{$(`[data-play-video="${id}"]`)?.classList.remove('loading');}
 }
 function videoError(error){return error?.name==='NotAllowedError'?'Разрешите доступ к камере и микрофону в настройках приложения или браузера.':error?.name==='NotFoundError'?'Камера или микрофон не найдены.':error?.message||'Не удалось включить камеру';}
@@ -23,12 +23,12 @@ async function openVideoCamera(facing='user'){
  if(S.demo)return toast('Видеокружки доступны после входа');
  window.graffPauseVoice?.();window.pauseVideo();window.clearVoiceDraft?.();window.clearVideoDraft();window.clearPhotoDraft?.();
  const state={epoch:videoEpoch,chat:S.chatId,user:config.user.id,facing,nonce:crypto.randomUUID()};videoSession=state;
- modal('Видеокружок',`<div class="video-camera-disc"><video id="video-camera" autoplay muted playsinline></video><span class="video-camera-wait">Включаем камеру…</span></div><p class="video-hint">До 60 секунд · звук включён</p><div class="form-error video-error" role="alert"></div><div class="video-actions"><button class="secondary" data-action="flip-video" disabled aria-label="Переключить камеру">${icon('flip')} Камера</button><button class="primary" data-action="start-video" disabled><span class="record-dot"></span> Записать</button></div><button class="text-btn" data-action="close-modal">Отмена</button>`);
+ modal('Видеокружок',`<div class="video-camera-disc"><video id="video-camera" poster="video-poster.svg" autoplay muted playsinline></video><span class="video-camera-wait">Включаем камеру…</span></div><p class="video-hint">До 60 секунд · звук включён</p><div class="form-error video-error" role="alert"></div><div class="video-actions"><button class="secondary" data-action="flip-video" disabled aria-label="Переключить камеру">${icon('flip')} Камера</button><button class="primary" data-action="start-video" disabled><span class="record-dot"></span> Записать</button></div><button class="text-btn" data-action="close-modal">Отмена</button>`);
  try{
   if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)throw new Error('Обновите Graff или откройте приложение в современном браузере');
   state.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing},width:{ideal:640},height:{ideal:480},frameRate:{ideal:24,max:30}},audio:{echoCancellation:true,noiseSuppression:true}});
   if(videoSession!==state){state.stream.getTracks().forEach(t=>t.stop());return;}
-  const preview=$('#video-camera');preview.srcObject=state.stream;preview.classList.toggle('mirrored',facing==='user');await preview.play();$('.video-camera-wait')?.remove();document.querySelectorAll('.video-actions button').forEach(b=>b.disabled=false);
+  const preview=$('#video-camera');preview.srcObject=state.stream;preview.classList.toggle('mirrored',facing==='user');await preview.play();$('.video-camera-wait')?.remove();document.querySelectorAll('.video-actions button').forEach(b=>b.disabled=false);if(composerPress?.held&&composerPress.mode==='video')startVideoRecording();
  }catch(e){if(videoSession!==state)return;state.stream?.getTracks().forEach(t=>t.stop());$('.video-camera-wait')?.remove();$('.video-error').textContent=videoError(e);}
 }
 function startVideoRecording(){
@@ -49,14 +49,13 @@ async function finishVideoRecording(state){
  clearInterval(state.timer);state.stream?.getTracks().forEach(t=>t.stop());if(videoSession!==state)return;
  const duration=Date.now()-state.started;if(duration<650){closeModal();toast('Запишите хотя бы одну секунду');return;}if(state.bytes>8*1024*1024){closeModal();toast('Запись получилась слишком большой. Попробуйте покороче.');return;}
  state.blob=new Blob(state.parts,{type:state.recorder.mimeType});state.parts=[];state.url=URL.createObjectURL(state.blob);
- modal('Отправить кружок',`<div class="video-camera-disc video-preview-disc"><video src="${state.url}" id="video-preview" playsinline loop></video><button class="video-preview-play" data-action="preview-video" aria-label="Посмотреть запись">${icon('play')}</button></div><p class="video-hint">${durationText(Math.min(duration,60000))} · нажмите, чтобы посмотреть со звуком</p><div class="form-error video-error" role="alert"></div><button class="primary" data-action="send-video">Отправить кружок ${icon('send')}</button><button class="text-btn" data-action="retake-video">Перезаписать</button>`);
+ modal('Отправить кружок',`<div class="video-camera-disc video-preview-disc"><video src="${state.url}" id="video-preview" poster="video-poster.svg" preload="metadata" playsinline loop></video><button class="video-preview-play" data-action="preview-video" aria-label="Посмотреть запись"><span class="preview-play-badge">${icon('play')}</span></button></div><p class="video-hint">${durationText(Math.min(duration,60000))} · нажмите, чтобы посмотреть со звуком</p><div class="form-error video-error" role="alert"></div><button class="primary" data-action="send-video">Отправить кружок ${icon('send')}</button><button class="text-btn" data-action="retake-video">Перезаписать</button>`);
 }
 async function sendVideo(){const state=videoSession;if(!state?.blob||state.sending)return;state.sending=true;const button=$('[data-action="send-video"]');button.disabled=true;button.textContent='Отправляем…';try{
  const video=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).slice(String(reader.result).indexOf(';base64,')+8));reader.onerror=reject;reader.readAsDataURL(state.blob);});
  const r=await api(`/chats/${state.chat}/video`,'POST',{video,mime:state.blob.type,nonce:state.nonce});if(state.user!==config.user?.id)return;if(videoSession===state)closeModal();if(S.chatId===state.chat&&!S.messages.some(m=>m.id===r.message.id)){S.messages.push(r.message);renderMessages(true);}refresh();
  }catch(e){if(videoSession===state){$('.video-error').textContent=e.message;button.disabled=false;button.textContent='Повторить отправку';}state.sending=false;}}
 Object.assign(actions,{
- 'attach-menu':()=>modal('Прикрепить',`<button class="setting" data-action="attach-photo">${icon('image')}<div><strong>Изображение</strong><small>Фото из галереи</small></div></button><button class="setting" data-action="record-video">${icon('video')}<div><strong>Видеокружок</strong><small>Записать видео до 60 секунд</small></div></button>`),
  'record-video':()=>openVideoCamera(),'start-video':startVideoRecording,'stop-video':stopVideoRecording,'send-video':sendVideo,
  'flip-video':()=>openVideoCamera(videoSession?.facing==='user'?'environment':'user'),'retake-video':()=>openVideoCamera(videoSession?.facing||'user'),
  'preview-video':async()=>{const v=$('#video-preview');if(v.paused){await v.play();$('.video-preview-disc').classList.add('playing');}else{v.pause();$('.video-preview-disc').classList.remove('playing');}}
@@ -64,3 +63,18 @@ Object.assign(actions,{
 document.addEventListener('click',e=>{const b=e.target.closest('[data-play-video]');if(b)playVideo(Number(b.dataset.playVideo));});
 window.videoBackground=()=>{window.pauseVideo();if(videoSession?.stream&&videoSession.recorder?.state!=='inactive'){closeModal();toast('Запись отменена при выходе из приложения');}$('#video-preview')?.pause();};
 document.addEventListener('visibilitychange',()=>{if(document.hidden)window.videoBackground();});
+
+// A tap changes recorder mode; a hold records. Permission prompts keep the explicit Stop control available.
+let composerPress=null,composerSuppressClickUntil=0;
+window.clearComposerGesture=()=>{if(composerPress)clearTimeout(composerPress.timer);composerPress=null;};
+function updateComposerMode(){const button=$('#record-mode');if(!button)return;button.dataset.mode=composerMode;button.innerHTML=icon(composerMode==='video'?'video':'mic');button.setAttribute('aria-label',(composerMode==='video'?'Видеокружок':'Голосовое сообщение')+'. Нажмите для смены режима, удерживайте для записи');}
+actions['record-mode']=()=>{if(Date.now()<composerSuppressClickUntil)return;composerMode=composerMode==='voice'?'video':'voice';try{localStorage.setItem('graff.record-mode',composerMode);}catch{}updateComposerMode();toast(composerMode==='video'?'Удерживайте камеру, чтобы записать кружок':'Удерживайте микрофон, чтобы записать голосовое');};
+async function startComposerRecording(mode){$('#toast')?.classList.remove('show');try{if(mode==='video')await openVideoCamera();else await startVoice();}catch(e){closeModal();toast(e.message||'Не удалось начать запись');}}
+document.addEventListener('pointerdown',event=>{const button=event.target.closest('#record-mode');if(!button||event.button!==0)return;composerSuppressClickUntil=0;window.clearComposerGesture();const press={pointer:event.pointerId,mode:composerMode,held:true,started:false};composerPress=press;button.setPointerCapture(event.pointerId);press.timer=setTimeout(()=>{if(composerPress!==press||!press.held)return;press.started=true;composerSuppressClickUntil=Date.now()+1000;startComposerRecording(press.mode);},350);});
+function endComposerPress(event){const press=composerPress;if(!press||press.pointer!==event.pointerId)return;clearTimeout(press.timer);press.held=false;
+ if(press.started){composerSuppressClickUntil=Date.now()+800;if(press.mode==='video'&&videoSession?.recorder?.state==='recording'&&Date.now()-videoSession.started>=700)stopVideoRecording();if(press.mode==='voice'&&$('#recording-time')&&Date.now()-voiceStarted>=700)stopVoice();}composerPress=null;
+}
+document.addEventListener('pointerup',endComposerPress);document.addEventListener('pointercancel',endComposerPress);
+document.addEventListener('contextmenu',event=>{if(event.target.closest('#record-mode'))event.preventDefault();});
+document.addEventListener('keydown',event=>{if(event.target.closest('#record-mode')&&event.key==='Enter'){event.preventDefault();if(!event.repeat)startComposerRecording(composerMode);}});
+updateComposerMode();
