@@ -49,3 +49,10 @@
 - Physical Samsung-to-Samsung acoustics, radio range, OEM background battery management and Wi-Fi hotspot client isolation still need device testing. Emulator audio path/frame delivery is verified; subjective audio quality has not been assessed on physical phones.
 - Android LAN host: a 4-second native microphone hold delivered 14 encrypted PCM frames to a separate TCP client. Two LAN clients exercised floor contention and injected playback. Replayed ciphertext and a wrong AES key were rejected. Android LAN join mode independently connected to an encrypted external relay fixture, received continuous PCM audio and sent 15 native microphone frames back.
 - Beget Linux staging: both new radio tests passed using the RAM relay database before production deployment. Production `/graff/api/health` reports 0.7.0 and radio=true; existing database was backed up and preserved.
+
+## 0.7.1 — UI corrections
+
+- Measured composer at 320/360/393 px, including multiline input: send button 48×48, all icon centers share the same vertical baseline.
+- Real browser camera flow: Camera and Record buttons both 56 px with identical top coordinate; generated video preview Play glyph bounding box centered within 0.1 px horizontally and vertically.
+- Native bridge UI fixture: radio online idle/active and nearby idle/host states at 320×568, 360×640, 393×780 and 412×820. No page/content overflow or clipped controls; round PTT. Pairing and invitation dialogs retain code entry, copy/share controls.
+- Release APK versionCode 16 / versionName 0.7.1 builds and verifies with the existing v2/v3 signing key. UI checked in Chromium; no new physical Samsung test.

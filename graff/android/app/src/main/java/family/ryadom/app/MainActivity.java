@@ -68,7 +68,7 @@ public class MainActivity extends Activity {
         s.setJavaScriptCanOpenWindowsAutomatically(false);
         s.setSupportMultipleWindows(false);
         s.setSafeBrowsingEnabled(true);
-        s.setUserAgentString(s.getUserAgentString()+" Graff/0.7.0 (+https://kronoxx.ru/graff/)");
+        s.setUserAgentString(s.getUserAgentString()+" Graff/0.7.1 (+https://kronoxx.ru/graff/)");
         s.setTextZoom(100);s.setMediaPlaybackRequiresUserGesture(false);
         CookieManager.getInstance().setAcceptCookie(false);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
