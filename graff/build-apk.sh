@@ -14,7 +14,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 (cd "$ROOT/android" && ./gradlew --no-daemon :app:assembleRelease --console=plain)
 mkdir -p "$ROOT/build"
 "$BUILD_TOOLS/zipalign" -f 4 "$ROOT/android/app/build/outputs/apk/release/app-release-unsigned.apk" "$ROOT/build/aligned.apk"
-APK_OUTPUT=${APK_OUTPUT:-$ROOT/build/graff-0.6.1.apk}
+APK_OUTPUT=${APK_OUTPUT:-$ROOT/build/graff-0.7.0.apk}
 "$BUILD_TOOLS/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD --out "$APK_OUTPUT" "$ROOT/build/aligned.apk"
 "$BUILD_TOOLS/apksigner" verify --verbose "$APK_OUTPUT"
 printf 'APK: %s\n' "$APK_OUTPUT"

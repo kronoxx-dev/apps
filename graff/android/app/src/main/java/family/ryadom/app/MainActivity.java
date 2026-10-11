@@ -35,6 +35,7 @@ public class MainActivity extends Activity {
     private VoiceRecorder voice;
     private PermissionRequest cameraPermission;
     private boolean voiceRequested=false;
+    private String radioMode="online",radioCode="";
     private SharedPreferences prefs;
     private final ExecutorService network = new ThreadPoolExecutor(3,3,30,TimeUnit.SECONDS,new ArrayBlockingQueue<Runnable>(30));
     private static final String ORIGIN = "https://app.ryadom.local";
@@ -67,13 +68,14 @@ public class MainActivity extends Activity {
         s.setJavaScriptCanOpenWindowsAutomatically(false);
         s.setSupportMultipleWindows(false);
         s.setSafeBrowsingEnabled(true);
-        s.setUserAgentString(s.getUserAgentString()+" Graff/0.6.1 (+https://kronoxx.ru/graff/)");
+        s.setUserAgentString(s.getUserAgentString()+" Graff/0.7.0 (+https://kronoxx.ru/graff/)");
         s.setTextZoom(100);s.setMediaPlaybackRequiresUserGesture(false);
         CookieManager.getInstance().setAcceptCookie(false);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
         web.addJavascriptInterface(new Bridge(),"Android");
         web.setWebChromeClient(new WebChromeClient(){
             @Override public void onPermissionRequest(PermissionRequest request){runOnUiThread(()->{
+                if(RadioService.active()){request.deny();return;}
                 if(!ORIGIN.equals(request.getOrigin().toString().replaceAll("/$",""))){request.deny();return;}
                 for(String resource:request.getResources())if(!PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)&&!PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)){request.deny();return;}
                 if(cameraPermission!=null)cameraPermission.deny();cameraPermission=request;
@@ -91,7 +93,7 @@ public class MainActivity extends Activity {
                 if("https".equals(uri.getScheme())&&"tile.openstreetmap.org".equals(uri.getHost())&&file!=null&&file.matches("/[0-9]{1,2}/[0-9]+/[0-9]+\\.png"))return null;
                 if(!"https".equals(uri.getScheme())||!"app.ryadom.local".equals(uri.getHost()))return blocked();
                 if(file==null||file.equals("/"))file="/index.html";
-                if(!Arrays.asList("/index.html","/app.js","/voice.js","/attachments.js","/video.js","/video-poster.svg","/location.js","/vendor/leaflet.js","/vendor/leaflet.css","/style.css","/icon.svg","/avatars/artur.png","/avatars/adel.png","/avatars/rezeda.png","/avatars/family.png","/avatars/chelsey.png").contains(file))return blocked();
+                if(!Arrays.asList("/index.html","/app.js","/voice.js","/attachments.js","/video.js","/video-poster.svg","/radio.js","/location.js","/vendor/leaflet.js","/vendor/leaflet.css","/style.css","/icon.svg","/avatars/artur.png","/avatars/adel.png","/avatars/rezeda.png","/avatars/family.png","/avatars/chelsey.png").contains(file))return blocked();
                 String mime=file.endsWith(".png")?"image/png":file.endsWith(".js")?"text/javascript":file.endsWith(".css")?"text/css":file.endsWith(".svg")?"image/svg+xml":"text/html";
                 try {
                     Map<String,String> headers=new HashMap<>();
@@ -105,9 +107,11 @@ public class MainActivity extends Activity {
     }
     private WebResourceResponse blocked(){return new WebResourceResponse("text/plain","UTF-8",403,"Forbidden",Collections.emptyMap(),new ByteArrayInputStream(new byte[0]));}
     private String loadSession(){return SessionStore.load(this);}
-    private void saveSession(String raw) throws Exception {if(!new JSONObject(loadSession()).optString("token").equals(new JSONObject(raw).optString("token")))stopService(new android.content.Intent(this,LocationService.class));SessionStore.save(this,raw);runOnUiThread(()->{PushController.sync(this);promptNotifications(false);});}
+    private void saveSession(String raw) throws Exception {if(!new JSONObject(loadSession()).optString("token").equals(new JSONObject(raw).optString("token")))stopService(new android.content.Intent(this,RadioService.class));if(!new JSONObject(loadSession()).optString("token").equals(new JSONObject(raw).optString("token")))stopService(new android.content.Intent(this,LocationService.class));SessionStore.save(this,raw);runOnUiThread(()->{PushController.sync(this);promptNotifications(false);});}
     private volatile String pendingChat="{}";
+    private volatile boolean pendingRadio=false;
     private void captureNotification(android.content.Intent intent){
+        if(intent!=null&&"GRAFF_RADIO".equals(intent.getAction()))pendingRadio=true;
         if(intent!=null && "GRAFF_CHAT".equals(intent.getAction()))try{
             JSONObject item=new JSONObject();item.put("chatId",intent.getStringExtra("chatId"));item.put("userId",intent.getStringExtra("userId"));pendingChat=item.toString();
         }catch(Exception ignored){}
@@ -134,6 +138,7 @@ public class MainActivity extends Activity {
     @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){
         super.onRequestPermissionsResult(code,permissions,results);
         if(code==105)grantCamera();
+        if(code==106){if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)==android.content.pm.PackageManager.PERMISSION_GRANTED)beginRadio();else RadioService.lastError="Разрешите микрофон в настройках Android";}
         if(code==103){if(checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION)==android.content.pm.PackageManager.PERMISSION_GRANTED)beginLocation();else locationEvent("Разрешите доступ к геолокации, чтобы появиться на карте");}
         if(code==102){if(results.length>0&&results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED){if(voiceRequested)voice.start();}else{JSONObject error=error("Для записи разрешите доступ к микрофону в настройках телефона");try{error.put("state","error");}catch(Exception ignored){}voiceEvent(error);}}
     }
@@ -146,19 +151,27 @@ public class MainActivity extends Activity {
         final Uri uri=data.getData();
         try{network.execute(()->{try{imageEvent(ImageAttachment.read(this,uri));}catch(Exception|OutOfMemoryError e){imageEvent(error("Не удалось открыть изображение. Выберите JPG, PNG или другое фото до 32 МБ."));}});}catch(Exception e){imageEvent(error("Попробуйте выбрать изображение ещё раз"));}
     }
+    private void beginRadio(){try{voiceRequested=false;voice.cancel(false);startForegroundService(new android.content.Intent(this,RadioService.class).putExtra("mode",radioMode).putExtra("code",radioCode));}catch(Exception e){RadioService.lastError="Не удалось включить рацию. Откройте приложение и попробуйте снова.";}}
     public class Bridge {
+        @JavascriptInterface public String radioStatus(){return RadioService.status();}
+        @JavascriptInterface public void radioStart(String mode,String code){runOnUiThread(()->{if(RadioService.active())return;radioMode=mode;radioCode=code;RadioService.lastError="";if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO},106);else beginRadio();});}
+        @JavascriptInterface public void radioShare(String code){if(code.length()>150||!code.startsWith("graff1|"))return;runOnUiThread(()->{android.content.Intent share=new android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT,code);startActivity(android.content.Intent.createChooser(share,"Передать код рации"));});}
+        @JavascriptInterface public void radioStop(){runOnUiThread(()->stopService(new android.content.Intent(MainActivity.this,RadioService.class)));}
+        @JavascriptInterface public void radioTalk(boolean pressed){runOnUiThread(()->{RadioService r=RadioService.instance;if(r!=null)r.talk(pressed);});}
+
         @JavascriptInterface public void pickImage(){runOnUiThread(()->{try{android.content.Intent i=new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);i.addCategory(android.content.Intent.CATEGORY_OPENABLE);i.setType("image/*");startActivityForResult(i,104);}catch(Exception e){imageEvent(error("Галерея недоступна"));}});}
 
         @JavascriptInterface public void startLocation(){runOnUiThread(()->{if(checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION,android.Manifest.permission.ACCESS_COARSE_LOCATION},103);else beginLocation();});}
         @JavascriptInterface public void stopLocation(){runOnUiThread(()->stopService(new android.content.Intent(MainActivity.this,LocationService.class)));}
         @JavascriptInterface public String locationStatus(){try{return new JSONObject().put("active",LocationService.active).put("error",LocationService.error).toString();}catch(Exception e){return "{}";}}
 
-        @JavascriptInterface public void startVoice(){runOnUiThread(()->{voiceRequested=true;if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO},102);else voice.start();});}
+        @JavascriptInterface public void startVoice(){runOnUiThread(()->{if(RadioService.active()){JSONObject event=error("Сначала выйдите из канала рации");try{event.put("state","error");}catch(Exception ignored){}voiceEvent(event);return;}voiceRequested=true;if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO},102);else voice.start();});}
         @JavascriptInterface public void stopVoice(){runOnUiThread(()->voice.stop());}
         @JavascriptInterface public void cancelVoice(){runOnUiThread(()->{voiceRequested=false;voice.cancel(false);});}
 
         @JavascriptInterface public void notifications(){runOnUiThread(()->promptNotifications(true));}
         @JavascriptInterface public String notificationStatus(){return PushController.status(MainActivity.this);}
+        @JavascriptInterface public boolean consumeRadio(){boolean value=pendingRadio;pendingRadio=false;return value;}
         @JavascriptInterface public String consumeNotification(){String result=pendingChat;pendingChat="{}";return result;}
         @JavascriptInterface public void visibleChat(String id){PushController.visibleChat=id;try{JSONObject user=new JSONObject(loadSession()).optJSONObject("user");if(user!=null&&!id.isEmpty())getSystemService(android.app.NotificationManager.class).cancel(user.optString("id")+":"+id,1);}catch(Exception ignored){}}
 
@@ -209,7 +222,7 @@ public class MainActivity extends Activity {
         try{JSONObject payload=new JSONObject();payload.put("status",status);payload.put("data",data);String script="window.onNativeResponse("+JSONObject.quote(id)+","+payload.toString()+")";runOnUiThread(()->{if(web!=null&&!isFinishing())web.evaluateJavascript(script,null);});}catch(Exception ignored){}
     }
     @Override public void onBackPressed(){web.evaluateJavascript("window.appBack ? window.appBack() : false",result->{if(!"true".equals(result))finish();});}
-    @Override protected void onPause(){PushController.foreground=false;if(voice!=null)voice.cancel(true);if(web!=null&&cameraPermission==null)web.evaluateJavascript("window.videoBackground && window.videoBackground()",null);if(web!=null)web.evaluateJavascript("window.graffPauseVoice && window.graffPauseVoice()",null);super.onPause();web.onPause();}
+    @Override protected void onPause(){if(RadioService.instance!=null)RadioService.instance.talk(false);PushController.foreground=false;if(voice!=null)voice.cancel(true);if(web!=null&&cameraPermission==null)web.evaluateJavascript("window.videoBackground && window.videoBackground()",null);if(web!=null)web.evaluateJavascript("window.graffPauseVoice && window.graffPauseVoice()",null);super.onPause();web.onPause();}
     @Override protected void onResume(){super.onResume();PushController.foreground=true;PushController.sync(this);if(web!=null){web.onResume();web.evaluateJavascript("window.onNotificationOpen && window.onNotificationOpen()",null);}}
     @Override protected void onDestroy(){if(cameraPermission!=null){cameraPermission.deny();cameraPermission=null;}if(voice!=null)voice.cancel(false);network.shutdownNow();if(web!=null){web.removeJavascriptInterface("Android");web.destroy();web=null;}super.onDestroy();}
 }

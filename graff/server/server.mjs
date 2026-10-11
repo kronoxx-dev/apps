@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {radioApi} from './radio.mjs';
 import {createVideoStore} from './video.mjs';
 import {createImageStore} from './images.mjs';
 import {locationApi} from './location.mjs';
@@ -49,6 +50,7 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
   const all = (sql, ...args) => db.prepare(sql).all(...args);
   const run = (sql, ...args) => db.prepare(sql).run(...args);
   const locations=locationApi(db);
+  const radio=radioApi(db,dataDir);
   const push=createPushQueue(db,pushSender);
   const drainPush=()=>push.drain().catch(()=>console.warn('Push queue temporarily unavailable'));
   drainPush();
@@ -105,15 +107,15 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
       }
       if(!path.startsWith('/api/')) {
         if(req.method!=='GET' && req.method!=='HEAD') throw fail(405,'Метод не поддерживается');
-        const files={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/voice.js':'voice.js','/attachments.js':'attachments.js','/video.js':'video.js','/video-poster.svg':'video-poster.svg','/location.js':'location.js','/vendor/leaflet.js':'vendor/leaflet.js','/vendor/leaflet.css':'vendor/leaflet.css','/style.css':'style.css','/icon.svg':'icon.svg','/avatars/artur.png':'avatars/artur.png','/avatars/adel.png':'avatars/adel.png','/avatars/rezeda.png':'avatars/rezeda.png','/avatars/family.png':'avatars/family.png','/avatars/chelsey.png':'avatars/chelsey.png'};
+        const files={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/voice.js':'voice.js','/attachments.js':'attachments.js','/video.js':'video.js','/video-poster.svg':'video-poster.svg','/radio.js':'radio.js','/location.js':'location.js','/vendor/leaflet.js':'vendor/leaflet.js','/vendor/leaflet.css':'vendor/leaflet.css','/style.css':'style.css','/icon.svg':'icon.svg','/avatars/artur.png':'avatars/artur.png','/avatars/adel.png':'avatars/adel.png','/avatars/rezeda.png':'avatars/rezeda.png','/avatars/family.png':'avatars/family.png','/avatars/chelsey.png':'avatars/chelsey.png'};
         const file=files[path]; if(!file) throw fail(404,'Не найдено');
         const body=readFileSync(resolve(assets,file));
         res.writeHead(200,{'Content-Type':({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png'})[extname(file)],'Content-Security-Policy':"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org; connect-src 'self'; media-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Cache-Control':'no-cache'});
         res.end(req.method==='HEAD'?undefined:body); return;
       }
-      if(path==='/api/health' && req.method==='GET') return send(200,{ok:true,name:'Graff',version:'0.6.1',video:true,push:push.enabled,voice:true,transcription:transcription.enabled});
+      if(path==='/api/health' && req.method==='GET') return send(200,{ok:true,name:'Graff',version:'0.7.0',radio:true,video:true,push:push.enabled,voice:true,transcription:transcription.enabled});
       const ip=req.socket.remoteAddress || 'local';
-      throttle('all:'+ip,600,60000);
+      throttle((path.startsWith('/api/radio/')?'radio-ip:':'all:')+ip,path.startsWith('/api/radio/')?3000:600,60000);
       if(req.headers.origin) {
         const expected=publicOrigin || `${req.socket.encrypted?'https':'http'}://${req.headers.host}`;
         if(req.headers.origin!==expected) throw fail(403,'Недопустимый источник запроса');
@@ -159,6 +161,7 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
       const token=(req.headers.authorization||'').replace(/^Bearer /,'');
       const user=one('SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token=? AND s.expires>?',hash(token),now());
       if(!user) throw fail(401,'Войдите в аккаунт');
+      if(path.startsWith('/api/radio/') && req.method==='POST'){throttle('radio-user:'+user.id,1000,60000);return send(200,radio.handle(path.slice(11),body,user,hash(token)));}
       const locationResult=locations.handle(path,req.method,body,user,hash(token));
       if(locationResult)return send(200,locationResult);
       if(path==='/api/push/devices' && req.method==='POST') {
@@ -357,7 +360,7 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
   });
   server.requestTimeout=60000;
   server.headersTimeout=10000;
-  return { server, db, drainPush:()=>push.drain(),drainTranscription:()=>transcription.drain(), close:async()=>{locations.close();await transcription.close();await push.close();await new Promise(r=>server.close(r));db.close();} };
+  return { server, db, drainPush:()=>push.drain(),drainTranscription:()=>transcription.drain(), close:async()=>{radio.close();locations.close();await transcription.close();await push.close();await new Promise(r=>server.close(r));db.close();} };
 }
 
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
