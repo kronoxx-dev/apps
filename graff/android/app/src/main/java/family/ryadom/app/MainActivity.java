@@ -42,6 +42,7 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
         prefs=getSharedPreferences("ryadom",MODE_PRIVATE);
         PushController.channel(this);captureNotification(getIntent());voice=new VoiceRecorder(this);
         FrameLayout root=new FrameLayout(this);
@@ -68,7 +69,7 @@ public class MainActivity extends Activity {
         s.setJavaScriptCanOpenWindowsAutomatically(false);
         s.setSupportMultipleWindows(false);
         s.setSafeBrowsingEnabled(true);
-        s.setUserAgentString(s.getUserAgentString()+" Graff/0.7.1 (+https://kronoxx.ru/graff/)");
+        s.setUserAgentString(s.getUserAgentString()+" Graff/0.7.2 (+https://kronoxx.ru/graff/)");
         s.setTextZoom(100);s.setMediaPlaybackRequiresUserGesture(false);
         CookieManager.getInstance().setAcceptCookie(false);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);

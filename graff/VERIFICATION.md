@@ -56,3 +56,12 @@
 - Real browser camera flow: Camera and Record buttons both 56 px with identical top coordinate; generated video preview Play glyph bounding box centered within 0.1 px horizontally and vertically.
 - Native bridge UI fixture: radio online idle/active and nearby idle/host states at 320×568, 360×640, 393×780 and 412×820. No page/content overflow or clipped controls; round PTT. Pairing and invitation dialogs retain code entry, copy/share controls.
 - Release APK versionCode 16 / versionName 0.7.1 builds and verifies with the existing v2/v3 signing key. UI checked in Chromium; no new physical Samsung test.
+
+
+## 0.7.2 — radio transport and shared navigation (2026-10-12)
+
+- All 18 server tests pass. Regression coverage includes delayed first audio (3.5 seconds), delayed polling (3 seconds), four-frame batches, paginated cursor delivery, idempotent duplicate frames, atomic validation and compatibility with older clients.
+- Isolated real Beget HTTPS reproduction: the old implementation lost the floor on the second audio frame. Updated transport delivered all 10 test frames despite upload/poll delays above one second. Production chat data was not used.
+- Shared navigation measured at 320×568, 360×640, 393×780 and 412×820 across chats, radio, location and settings: identical 76 px height and icon/label positions; active indicator has a separate row below the label. Compact radio states still fit without page scrolling or clipped controls.
+- Release APK versionCode 17 / versionName 0.7.2 builds and verifies with the existing v2/v3 signing key. Physical Samsung acoustics and OEM background behavior remain unverified.
+- Android 15 release through a local HTTP bridge forwarding all radio traffic to the isolated Beget HTTPS instance: native capture delivered 22 PCM frames to the second account; 48 synthetic return frames were uploaded while the display was off. AudioFlinger recorded 176000 played source frames (11 seconds at 16 kHz) with gaps/underruns under this network timing. This confirms transport and playback, not smooth physical-phone acoustics. Direct emulator Internet access was unavailable; the bridge is test-only and is not in the APK.

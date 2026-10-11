@@ -113,7 +113,7 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
         res.writeHead(200,{'Content-Type':({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png'})[extname(file)],'Content-Security-Policy':"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org; connect-src 'self'; media-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Cache-Control':'no-cache'});
         res.end(req.method==='HEAD'?undefined:body); return;
       }
-      if(path==='/api/health' && req.method==='GET') return send(200,{ok:true,name:'Graff',version:'0.7.1',radio:true,video:true,push:push.enabled,voice:true,transcription:transcription.enabled});
+      if(path==='/api/health' && req.method==='GET') return send(200,{ok:true,name:'Graff',version:'0.7.2',radio:true,video:true,push:push.enabled,voice:true,transcription:transcription.enabled});
       const ip=req.socket.remoteAddress || 'local';
       throttle((path.startsWith('/api/radio/')?'radio-ip:':'all:')+ip,path.startsWith('/api/radio/')?3000:600,60000);
       if(req.headers.origin) {
@@ -124,7 +124,7 @@ export function createMessenger({ dataDir = resolve(here, '../data'), bootstrapC
       if(['POST','PUT','PATCH'].includes(req.method)) {
         if(!(req.headers['content-type']||'').startsWith('application/json')) throw fail(415,'Ожидается JSON');
         let size=0,chunks=[];
-        for await(const chunk of req) { size+=chunk.length; if(size>(/^\/api\/chats\/[a-zA-Z0-9-]+\/video$/.test(path)?11300000:/^\/api\/chats\/[a-zA-Z0-9-]+\/(voice|image)$/.test(path)?2900000:32768)) throw fail(413,'Слишком большой запрос'); chunks.push(chunk); }
+        for await(const chunk of req) { size+=chunk.length; if(size>(path==='/api/radio/frame'?65536:/^\/api\/chats\/[a-zA-Z0-9-]+\/video$/.test(path)?11300000:/^\/api\/chats\/[a-zA-Z0-9-]+\/(voice|image)$/.test(path)?2900000:32768)) throw fail(413,'Слишком большой запрос'); chunks.push(chunk); }
         try { body=JSON.parse(Buffer.concat(chunks).toString()||'{}'); } catch { throw fail(400,'Некорректный JSON'); }
         if(!body || Array.isArray(body) || typeof body!=='object') throw fail(400,'Некорректный запрос');
       }
